@@ -1,0 +1,35 @@
+diff --git a/SDS011.cpp b/SDS011.cpp
+index 8c5594b..a6ed765 100644
+--- a/SDS011.cpp
++++ b/SDS011.cpp
+@@ -134,3 +134,8 @@ void SDS011::begin(HardwareSerial* serial, int8_t rxPin, int8_t txPin) {
+ 	sds_data = serial;
+ }
+ #endif
++
++// Exposing interface of Software Serial
++void SDS011::end(){
++    sds_data->end();
++}
+diff --git a/SDS011.h b/SDS011.h
+index 0ac65ea..ce617c2 100644
+--- a/SDS011.h
++++ b/SDS011.h
+@@ -27,6 +27,8 @@ class SDS011 {
+ #ifndef ESP32 
+ 		void begin(SoftwareSerial* serial);
+ 		void begin(uint8_t pin_rx, uint8_t pin_tx);
++        // Adding an end functionality to stop soft-serial 
++        void end();
+ #endif
+ #ifdef ESP32
+ 		void begin(HardwareSerial* serial);
+@@ -38,7 +40,7 @@ class SDS011 {
+ 		void continuous_mode();
+ 	private:
+ 		uint8_t _pin_rx, _pin_tx;
+-		Stream *sds_data;
++		SoftwareSerial *sds_data;
+ };
+ 
+ #endif
