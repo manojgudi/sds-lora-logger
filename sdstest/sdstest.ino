@@ -9,7 +9,7 @@ Don't forget to patch Print.h and SDS011 library
 #include <Arduino.h>
 #include <SoftwareSerial.h>
 
-SoftwareSerial Serial1(10, 11); // RX, TX
+SoftwareSerial Serial1(10, 11);  // RX, TX
 
 static char recv_buf[512];
 static bool is_exist = false;
@@ -19,7 +19,7 @@ float p10, p25;
 int error;
 SDS011 my_sds;
 
-static int at_send_check_response(char *p_ack, int timeout_ms, char *p_cmd, ...){
+static int at_send_check_response(char *p_ack, int timeout_ms, char *p_cmd, ...) {
   int ch;
   int num = 0;
   int index = 0;
@@ -30,51 +30,65 @@ static int at_send_check_response(char *p_ack, int timeout_ms, char *p_cmd, ...)
   va_start(args, p_cmd);
   Serial1.printf(p_cmd, args);
   Serial.printf(p_cmd, args);
-
   va_end(args);
+  delay(200);
   startMillis = millis();
 
 
-  if (p_ack == NULL){
+  if (p_ack == NULL) {
     return 0;
   }
 
   do {
-    while(Serial1.available() > 0){               
-    ch = Serial1.read();
-    recv_buf[index++] = ch;
-    Serial.print((char) ch);
-    delay(2);
-  }
+    while (Serial1.available() > 0) {
+      ch = Serial1.read();
+      recv_buf[index++] = ch;
+      Serial.print((char)ch);
+      delay(2);
+    }
 
-  if (strstr(recv_buf, p_ack) != NULL)
-    return 1;
+    if (strstr(recv_buf, p_ack) != NULL)
+      return 1;
 
-  } while(millis() - startMillis < timeout_ms);
-  
+  } while (millis() - startMillis < timeout_ms);
+
+  if (startMillis >= timeout_ms)
+    Serial.println("TIMEOUT");
+    
   return 0;
 }
 
-static void recv_prase(char *p_msg){
+static void recv_prase(char *p_msg) {
   if (p_msg == NULL)
     return;
 
-      
-char *p_start = NULL;
-int data = 0;
-int rssi = 0;
-int snr = 0;
 
-p_start = strstr(p_msg, "RX");
-if (p_start && (1 == sscanf(p_start, "RX: \"%d\"\r\n", &data))){
-  Serial.println(data);
-  led == !!data;
-  if (led)  {
-    digitalWrite(LED_BUILTIN, LOW);
-  } else {
-    digitalWrite(LED_BUILTIN, HIGH);
+  char *p_start = NULL;
+  int data = 0;
+  int rssi = 0;
+  int snr = 0;
+
+  p_start = strstr(p_msg, "RX");
+  if (p_start && (1 == sscanf(p_start, "RX: \"%d\"\r\n", &data))) {
+    Serial.print("Recevied Here: ");
+    Serial.println(data);
+    led == !!data;
+    if (led) {
+      digitalWrite(LED_BUILTIN, LOW);
+    } else {
+      digitalWrite(LED_BUILTIN, HIGH);
+    }
   }
-    
+
+  p_start = strstr(p_msg, "RSSI");
+  if (p_start && (1 == sscanf(p_start, "RSSI %d,", &rssi))) {
+    Serial.print("RSSI ");
+    Serial.println(rssi);
+  }
+  p_start = strstr(p_msg, "SNR");
+  if (p_start && (1 == sscanf(p_start, "SNR %d", &snr))) {
+    Serial.print("SNR ");
+    Serial.println(snr);
   }
 }
 
@@ -83,29 +97,29 @@ void setup() {
   Serial.begin(9600);
   Serial1.begin(9600);
 
-pinMode(LED_BUILTIN, OUTPUT);
-digitalWrite(LED_BUILTIN, HIGH);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
 
-Serial.print("E5 LORAWAN TEST\r\n");
+  Serial.print("E5 LORAWAN TEST\r\n");
 
-if (at_send_check_response("+AT: OK", 100, "AT\r\n")){
-        Serial.print("Sent AT commands");
-        at_send_check_response("+ID: AppEui", 1000, "AT+ID\r\n");
-        at_send_check_response("+MODE: LWOTAA", 1000, "AT+MODE=LWOTAA\r\n");
-        at_send_check_response("+DR: EU868", 1000, "AT+DR=EU868\r\n");
-        at_send_check_response("+CH: NUM", 1000, "AT+CH=NUM,0-2\r\n");
-        at_send_check_response("+KEY: APPKEY", 1000, "AT+KEY=APPKEY,\"2B7E151628AED2A6ABF7158809CF4F3C\"\r\n");
-        at_send_check_response("+CLASS: C", 1000, "AT+CLASS=A\r\n");
-        at_send_check_response("+PORT: 8", 1000, "AT+PORT=8\r\n");
-        is_exist = true;
-        is_join = true;
-        delay(200);
-} else {
-  Serial.print("No E5 module found");
-  is_exist = false;
+  if (at_send_check_response("+AT: OK", 100, "AT\r\n")) {
+    Serial.print("Sent AT commands");
+    at_send_check_response("+ID: AppEui", 1000, "AT+ID\r\n");
+    at_send_check_response("+MODE: LWOTAA", 1000, "AT+MODE=LWOTAA\r\n");
+    at_send_check_response("+DR: EU868", 1000, "AT+DR=EU868\r\n");
+    at_send_check_response("+CH: NUM", 1000, "AT+CH=NUM,0-2\r\n");
+    at_send_check_response("+KEY: APPKEY", 1000, "AT+KEY=APPKEY,\"2B7E151628AED2A6ABF7158809CF4F3C\"\r\n");
+    at_send_check_response("+CLASS: C", 1000, "AT+CLASS=A\r\n");
+    at_send_check_response("+PORT: 8", 1000, "AT+PORT=8\r\n");
+    is_exist = true;
+    is_join = true;
+    delay(200);
+  } else {
+    Serial.print("No E5 module found");
+    is_exist = false;    
+  }
 }
 
-}
 
 void loop() {
 
@@ -115,46 +129,50 @@ void loop() {
   my_sds.begin(6, 7);
   delay(1000);
   error = my_sds.read(&p25, &p10);
-  
+
   // SDS needs to be shutdown for LoRa to function properly
   my_sds.end();
   delay(1000);
-
+  char cmd[128];
+    
   if (!error) {
     Serial.println("P2.5: " + String(p25));
     Serial.println("P10:  " + String(p10));
-      
-  }else{
+
+  } else {
     Serial.print("Error ");
     Serial.println(error);
   }
 
-  if (is_exist){
+  if (is_exist) {
     int ret = 0;
-    if (is_join){    
-      ret = at_send_check_response("+JOIN: Network joined", 12000, "AT+JOIN\r\n");    
+    if (is_join) {
+      ret = at_send_check_response("+JOIN: Network joined", 12000, "AT+JOIN\r\n");
+      
       if (ret) {
-        is_join = false;      
+        is_join = false;
       } else {
         at_send_check_response("+ID: AppEui", 1000, "AT+ID\r\n");
         delay(5000);
       }
+      
+
     } else {
-      char cmd[128];
-      sprintf(cmd, "AT+CMSGHEX=\"%04X\"\r\n", (int)temp);
+      
+      sprintf(cmd, "AT+CMSGHEX=\"%04X\"\r\n", (int)p25);
       ret = at_send_check_response("Done", 5000, cmd);
-      if (ret){
+      Serial.println("Data Sent");
+      if (ret) {
         recv_prase(recv_buf);
-      } else{
+      } else {
         Serial.print("Send failed!\r\n\r\n");
       }
-        delay(5000);    
-    } 
+      delay(5000);
+    }
   } else {
+    Serial.print("is_exist false");
     delay(1000);
   }
-
-  
 }
 
 /*
