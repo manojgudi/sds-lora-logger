@@ -1,25 +1,59 @@
 /*
-An example to log SDS011 data using LoRa interface
-Uses 1 native serial, 2 software serial, need to improve fetching data from SDS011
+An example to log sdsInstance data using LoRa interface
+Uses 1 native serial, 2 software serial, need to improve fetching data from sdsInstance
 XXX
-Don't forget to patch Print.h and SDS011 library
+Don't forget to patch Print.h and sdsInstance library
 */
 
-#include "SDS011.h"
+
 #include <Arduino.h>
 #include <SoftwareSerial.h>
+#include <string.h>
+#include <stdlib.h>
 
-SoftwareSerial Serial1(10, 11);  // RX, TX
+#include "NovaSDS011.h"
+#include "LoraModules.h"
+
+// Pin definition
+#define LORA_RX D1
+#define LORA_TX D2
+
+#define SDS_TX D3
+#define SDS_RX D4
+
+#define MODE "DEBUG"  
+
+EspSoftwareSerial::UART LoraSerial;
 
 static char recv_buf[512];
-static bool is_exist = false;
-static bool is_join = false;
+static bool doesLoraExist   = false;
+static bool hasLoraJoined = false;
 static int led = 0;
+static long loraConnectedSeconds = 0;
 float p10, p25;
-int error;
-SDS011 my_sds;
+int sdsErr;
+NovaSDS011 sdsInstance;
+/*
+Logging module
+*/
+void DEBUG(const char *output){
+if (!(strcmp(MODE, "DEBUG")))
+  Serial.println(output);
+}
 
-static int at_send_check_response(char *p_ack, int timeout_ms, char *p_cmd, ...) {
+void DEBUG(String output){
+if (!(strcmp(MODE, "DEBUG")))
+  Serial.println(output);
+}
+
+void error(const char *output){
+  Serial.println(output);
+}
+
+/*
+Function to send AT Commands and get response
+*/
+static int at_send_check_response(const char *p_ack, int timeout_ms, const char *p_cmd, ...) {
   int ch;
   int num = 0;
   int index = 0;
@@ -28,20 +62,19 @@ static int at_send_check_response(char *p_ack, int timeout_ms, char *p_cmd, ...)
 
   memset(recv_buf, 0, sizeof(recv_buf));
   va_start(args, p_cmd);
-  Serial1.printf(p_cmd, args);
+  LoraSerial.printf(p_cmd, args);
   Serial.printf(p_cmd, args);
   va_end(args);
   delay(200);
   startMillis = millis();
-
 
   if (p_ack == NULL) {
     return 0;
   }
 
   do {
-    while (Serial1.available() > 0) {
-      ch = Serial1.read();
+    while (LoraSerial.available() > 0) {
+      ch = LoraSerial.read();
       recv_buf[index++] = ch;
       Serial.print((char)ch);
       delay(2);
@@ -52,16 +85,20 @@ static int at_send_check_response(char *p_ack, int timeout_ms, char *p_cmd, ...)
 
   } while (millis() - startMillis < timeout_ms);
 
-  if (startMillis >= timeout_ms)
+  if (startMillis >= timeout_ms){
     Serial.println("TIMEOUT");
-    
+    return 2;
+  }
+  
   return 0;
 }
 
+/*
+Method to recieve Lora phrase and print it to Serial
+*/
 static void recv_prase(char *p_msg) {
   if (p_msg == NULL)
     return;
-
 
   char *p_start = NULL;
   int data = 0;
@@ -93,17 +130,11 @@ static void recv_prase(char *p_msg) {
 }
 
 
-void setup() {
-  Serial.begin(9600);
-  Serial1.begin(9600);
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  digitalWrite(LED_BUILTIN, HIGH);
-
-  Serial.print("E5 LORAWAN TEST\r\n");
-
+/*
+Tries probing if LoRa exists
+*/
+void bootLora(){
   if (at_send_check_response("+AT: OK", 100, "AT\r\n")) {
-    Serial.print("Sent AT commands");
     at_send_check_response("+ID: AppEui", 1000, "AT+ID\r\n");
     at_send_check_response("+MODE: LWOTAA", 1000, "AT+MODE=LWOTAA\r\n");
     at_send_check_response("+DR: EU868", 1000, "AT+DR=EU868\r\n");
@@ -111,68 +142,123 @@ void setup() {
     at_send_check_response("+KEY: APPKEY", 1000, "AT+KEY=APPKEY,\"2B7E151628AED2A6ABF7158809CF4F3C\"\r\n");
     at_send_check_response("+CLASS: C", 1000, "AT+CLASS=A\r\n");
     at_send_check_response("+PORT: 8", 1000, "AT+PORT=8\r\n");
-    is_exist = true;
-    is_join = true;
+    // Change this to "QUIET" in Production
+    at_send_check_response("+LOG: DEBUG", 1000, "AT+LOG=DEBUG");
+    // Check the Max length of the message allowed
+    //at_send_check_response("+LEN:", 1000, "AT+LW=LEN");
+    
+
+    doesLoraExist = true;
     delay(200);
+    Serial.println("LoRa found..");
   } else {
-    Serial.print("No E5 module found");
-    is_exist = false;    
+    doesLoraExist = false;    
+    Serial.println("LoRa not found!");
   }
 }
 
+void joinLoraNetwork(){
+  char stringBuffer[100];
+  // at_send_check_response returns 0 if successfully joined
+  int joinStatus = !(at_send_check_response("+JOIN: Network joined", 12000, "AT+JOIN\r\n"));
+  if (joinStatus){
+    hasLoraJoined = true;
+    loraConnectedSeconds = (long) millis() / 1000;
+    DEBUG("LoRa joined network successfully.");  
+  } else {
+    hasLoraJoined = false;
+    DEBUG("LoRa could not join the network.");
+    itoa(joinStatus, stringBuffer, 10);
+    DEBUG("Join return status: ");
+    DEBUG(stringBuffer);
+  }
+    
+
+
+}
+
+
+void setup() {
+  sdsInstance.begin(SDS_RX, SDS_TX);
+  delay(5000)  ;
+  Serial.begin(9600);
+  LoraSerial.begin(9600, SWSERIAL_8N1, LORA_RX, LORA_TX, false);
+
+
+ 
+
+  //testDataReportingMode();
+  //testDataWorkingMode();
+  //testDataDutyCycle();
+  //testSetDeviceID(0xAAAA);
+
+  if (sdsInstance.setWorkingMode(WorkingMode::work))
+  {
+    Serial.println("sdsInstance working mode \"Work\"");
+  }
+  else
+  {
+    Serial.println("FAIL: Unable to set working mode \"Work\"");
+  }
+
+  sdsInstance.begin(SDS_RX, SDS_TX);
+  SDS011Version version = sdsInstance.getVersionDate();
+
+  if (version.valid)
+  {
+    Serial.println("sdsInstance Firmware Vesion:\nYear: " + String(version.year) + "\nMonth: " +
+                   String(version.month) + "\nDay: " + String(version.day));
+  }
+  else
+  {
+    Serial.println("FAIL: Unable to obtain Software Version");
+  }
+
+  if (sdsInstance.setDutyCycle(0))
+  {
+    Serial.println("sdsInstance Duty Cycle set to 5min");
+  }
+  else
+  {
+    Serial.println("FAIL: Unable to set Duty Cycle");
+  }
+
+
+  DEBUG("Booting LoRa by probing pins (D1, D2).");
+  bootLora();
+  delay(1000);
+  joinLoraNetwork();
+  
+}
 
 void loop() {
 
-  // Magic of the universe lies in 42
-  Serial.println("Start reading from SDS");
-  // Can we remove the ugly delays? TODO
-  my_sds.begin(6, 7);
-  delay(1000);
-  error = my_sds.read(&p25, &p10);
+  float p25, p10;
+  char cmd[256];
+  String cmdString = "";
 
-  // SDS needs to be shutdown for LoRa to function properly
-  my_sds.end();
-  delay(1000);
-  char cmd[128];
-    
-  if (!error) {
-    Serial.println("P2.5: " + String(p25));
-    Serial.println("P10:  " + String(p10));
-
-  } else {
-    Serial.print("Error ");
-    Serial.println(error);
-  }
-
-  if (is_exist) {
-    int ret = 0;
-    if (is_join) {
-      ret = at_send_check_response("+JOIN: Network joined", 12000, "AT+JOIN\r\n");
+  // Send message from LORA if SDS value was read correctly
+  if (sdsInstance.queryData(p25, p10) == QuerryError::no_error)
+  {
+    Serial.println(String(millis() / 1000) + "s:PM2.5=" + String(p25) + ", PM10=" + String(p10));
+  
+  /*
+    // Try connecting to LoRa if LoRa is found, and LoRa has not joined and TODO: loraConnectedSeconds > 1 hour (rejoin logic)
+    if ((doesLoraExist) && (!hasLoraJoined))
       
-      if (ret) {
-        is_join = false;
-      } else {
-        at_send_check_response("+ID: AppEui", 1000, "AT+ID\r\n");
-        delay(5000);
-      }
-      
+    else
+      DEBUG("Do nothing");
+    */
 
-    } else {
-      
-      sprintf(cmd, "AT+CMSGHEX=\"%04X\"\r\n", (int)p25);
-      ret = at_send_check_response("Done", 5000, cmd);
-      Serial.println("Data Sent");
-      if (ret) {
-        recv_prase(recv_buf);
-      } else {
-        Serial.print("Send failed!\r\n\r\n");
-      }
-      delay(5000);
+    cmdString = String("AT+CMSG=")+ String(p25) +"A"+  String(p10) +String("\r\n");
+    cmdString.toCharArray(cmd, sizeof(cmd));
+
+    int ret = at_send_check_response("Done", 10000, cmd);
+    // sleep for 150 seconds
+    delay(150000);
+
     }
-  } else {
-    Serial.print("is_exist false");
-    delay(1000);
-  }
+    
 }
 
 /*
