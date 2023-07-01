@@ -19,24 +19,31 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "SDS011.h"
 #include "LoraModules.h"
-
+#include "NovaSDS011.h"
 
 // Pin definition
-#define ESP_RX D1
-#define ESP_TX D2
+#define LORA_RX D1
+#define LORA_TX D2
+
+#define SDS_TX D3
+#define SDS_RX D4
+
 #define MODE "debug"  
 
-// Static variables
+
+// Static bool variables used as flags
 static char recv_buf[512];
 static bool doesLoraExist   = false;
 static bool hasLoraJoined = false;
+static bool doesSDSExist = false;
+static bool hasSDSInitialized = false;
+
+// Static variables
 static int led = 0;
 static long loraConnectedSeconds = 0;
 float p10, p25;
 int error;
-SDS011 my_sds;
 
 
 EspSoftwareSerial::UART LoraSerial;
@@ -221,6 +228,9 @@ void joinLoraNetwork(){
 void setup() {
   Serial.begin(115200);
   
+  sdsInstance.begin(SDS_RX, SDS_TX);
+  delay(5000)  ;
+
   //clean FS, for testing
   //SPIFFS.format();
 
@@ -279,8 +289,13 @@ void setup() {
   //add all your parameters here
   wifiManager.addParameter(&custom_output);
   strcpy(output, custom_output.getValue());
+
+  // Label to get App Key for LoRa
+  WiFiManagerParameter loraAppKeyInputBox("", "Enter your string here", "default string", 50);
+ 
+
   // test custom html(radio)
-  const char* custom_radio_str = "<br/><label for='customfieldid'>Custom Field Label</label><br/><input type='radio' name='customfieldid' value='1' checked> One<br><input type='radio' name='customfieldid' value='2'> Two<br><input type='radio' name='customfieldid' value='3'> Three";
+  const char* custom_radio_str = "<br/><label for='customfieldid'>App Key for LoRa</label><br/><input type='radio' name='customfieldid' value='1' checked> One<br><input type='radio' name='customfieldid' value='2'> Two<br><input type='radio' name='customfieldid' value='3'> Three";
   
   new (&custom_field) WiFiManagerParameter(custom_radio_str); // custom html input
   
@@ -338,10 +353,37 @@ void setup() {
   digitalWrite(atoi(output), LOW);;
   
   // LoRa Probe
-  LoraSerial.begin(9600, SWSERIAL_8N1, ESP_RX, ESP_TX, false);
+  LoraSerial.begin(9600, SWSERIAL_8N1, LORA_RX, LORA_TX, false);
   Serial.print("Booting LoRa by probing pins (D1, D2).");
   bootLora();
-  
+
+  // SDS Probe
+  SDS011Version version = sdsInstance.getVersionDate();  
+  if (version.valid){
+    doesSDSExist = true;
+    String versionString = "sdsInstance Firmware Vesion:\nYear: " + String(version.year) + "\nMonth: " +
+                   String(version.month) + "\nDay: " + String(version.day);
+    debug(versionString);
+  }
+
+  // Configure only if SDS Exists
+  if (doesSDSExist){
+    if (sdsInstance.setWorkingMode(WorkingMode::work)) {
+      debug("sdsInstance working mode \"Work\"");
+      hasSDSInitialized = true;
+    } else {
+      debug("Couldn't set working mode");
+    }
+
+    // a duty cycle of 0 implies sds will work continuously
+    if (sdsInstance.setDutyCycle(0)){
+      hasSDSInitialized = hasSDSInitialized && true;
+      Serial.println("sdsInstance Duty Cycle set to 5min");
+    } else {
+      debug("Couldn't set duty cycle on SDS");
+    }
+  }    
+
   server.begin();
 }
 
