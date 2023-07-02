@@ -38,17 +38,7 @@ Logging module
 */
 void DEBUG(const char *output){
 if (!(strcmp(MODE, "DEBUG")))
-  Serial.println(output);
-}
-
-void DEBUG(String output){
-if (!(strcmp(MODE, "DEBUG")))
-  Serial.println(output);
-}
-
-void error(const char *output){
-  Serial.println(output);
-}
+…}
 
 /*
 Function to send AT Commands and get response
@@ -182,10 +172,7 @@ void setup() {
   sdsInstance.begin(SDS_RX, SDS_TX);
   delay(5000)  ;
   Serial.begin(9600);
-  LoraSerial.begin(9600, SWSERIAL_8N1, LORA_RX, LORA_TX, false);
-
-
- 
+  LoraSerial.begin(9600, SWSERIAL_8N1, LORA_RX, LORA_TX, false); 
 
   //testDataReportingMode();
   //testDataWorkingMode();
