@@ -546,10 +546,11 @@ void loop() {
               client.println(p10);
               client.println("</span></td></tr></table>");
 
-              if ((doesLoraExist) && (!hasLoraJoined))
+              if ((doesLoraExist) && (!hasLoraJoined)){
                 cmdString = String("AT+CMSG=")+ String(p25) +"A"+  String(p10) +String("\r\n");
                 cmdString.toCharArray(cmd, sizeof(cmd));
                 int ret = at_send_check_response("Done", 10000, cmd);
+            }
               else
                 DEBUG("Do nothing");
 
