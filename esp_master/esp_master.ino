@@ -18,7 +18,10 @@
 #define MODE "DEBUG"
 #define WIFI_RESET_PIN A0
 #define LORA_CMD_TIMEOUT 60000
-#define WAIT_BETWEEN_READING 30000
+#define WAIT_BETWEEN_READING 60000
+
+unsigned long REBOOT_AFTER_SEC=86400;
+long rebootDiff = -1;
 
 //the pins A4 and A5 are the SDA and SCL lines
 int query = 0;
@@ -309,6 +312,18 @@ void setup() {
 }
 
 void loop() {
+ /*
+  Reboot if REBOOT_AFTER_SEC has been elapsed, i.e. 1 day
+ */  
+rebootDiff = ((millis() / 1000) - REBOOT_AFTER_SEC);
+  if (rebootDiff >= 0){
+    Serial.println(millis()/1000);
+    Serial.println(REBOOT_AFTER_SEC);
+    debug("Restarting..");
+    ESP.restart();
+    }
+
+
   /*
   ---------------------------taking data from slave-----------------------------------
   */
@@ -478,4 +493,6 @@ void loop() {
     debug("");
   }
   delay(5000);
+
+  
 }
